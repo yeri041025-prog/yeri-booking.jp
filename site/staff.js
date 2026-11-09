@@ -374,7 +374,10 @@ function memberLine(m) {
 }
 
 function memberFormHtml(m) {
-  return '<form id="member-edit-form" class="stack" autocomplete="off"><p class="hint"><b>' + esc(m.name) + '</b> (' + esc(m.last4) + ') · 이름과 번호를 바꾸려면 삭제 후 다시 등록해주세요.</p>'
+  return '<form id="member-edit-form" class="stack" autocomplete="off">'
+    + '<div class="grid2"><label>이름<input id="me-name" maxlength="20" required value="' + esc(m.name) + '"></label>'
+    + '<label>전화번호 뒤 4자리<input id="me-last4" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" required value="' + esc(m.last4) + '"></label></div>'
+    + '<p class="hint">이름이나 번호를 고치면 이미 잡힌 예약도 새 이름으로 같이 옮겨집니다. 수강생이 쓰던 기기에서는 새 이름과 번호로 다시 확인해야 합니다.</p>'
     + '<div class="grid2"><label>수강 시작<input id="me-start" type="date" required value="' + esc(m.start) + '"></label>'
     + '<label>수강 종료<input id="me-end" type="date" required value="' + esc(m.end) + '"></label></div>'
     + '<div class="grid3"><label>남은 횟수<input id="me-credits" type="number" min="0" max="999" required value="' + esc(m.credits || 0) + '"></label>'
@@ -810,10 +813,32 @@ document.addEventListener('submit', async e => {
     if (!(credits >= 0) || !(total >= 0) || add < 0) return setMsg('member-edit-msg', false, '횟수는 0 이상 숫자로 입력해주세요.');
     credits += add; total += add;
     if (credits > total) return setMsg('member-edit-msg', false, '남은 횟수가 총 횟수보다 클 수 없습니다.');
+    const name = $('me-name').value.trim().replace(/\s+/g, ' '), last4 = $('me-last4').value.trim();
+    if (!name) return setMsg('member-edit-msg', false, '이름을 입력해주세요.');
+    if (!/^[0-9]{4}$/.test(last4)) return setMsg('member-edit-msg', false, '전화번호 뒤 4자리를 숫자로 입력해주세요.');
+    const submitBtn = f.querySelector('button[type=submit]'); if (submitBtn) submitBtn.disabled = true;
     try {
-      await updateDoc(doc(db, 'members', editingMember), { start, end, credits, total });
+      const oldId = editingMember, newId = await memberKey(name, last4);
+      if (newId === oldId) {
+        await updateDoc(doc(db, 'members', oldId), { name, last4, start, end, credits, total });
+      } else {
+        if (members.some(m => m.id === newId)) { if (submitBtn) submitBtn.disabled = false; return setMsg('member-edit-msg', false, '같은 이름·번호의 수강생이 이미 등록되어 있습니다.'); }
+        const old = members.find(m => m.id === oldId);
+        const snap = await getDocs(query(collection(db, 'bookings'), where('memberId', '==', oldId)));
+        if (snap.size > 150) { if (submitBtn) submitBtn.disabled = false; return setMsg('member-edit-msg', false, '이 수강생의 예약이 너무 많아 한 번에 옮길 수 없습니다. 지난 예약을 정리한 뒤 다시 시도해주세요.'); }
+        const batch = writeBatch(db);
+        batch.set(doc(db, 'members', newId), { name, last4, start, end, credits, total, lastRef: (old && old.lastRef) || '' });
+        snap.docs.forEach(d => {
+          const b = d.data();
+          batch.update(d.ref, { memberId: newId, name, last4 });
+          batch.set(doc(db, 'members', newId, 'mine', d.id), { date: b.date, slot: b.slot, n: b.n, onceKey: b.onceKey, cost: b.cost || 1, name, uid: b.uid, at: b.at });
+          batch.delete(doc(db, 'members', oldId, 'mine', d.id));
+        });
+        batch.delete(doc(db, 'members', oldId));
+        await batch.commit();
+      }
       editingMember = null; renderMembers(false); setMsg('memberlist-msg', true, '저장했습니다.');
-    } catch (err) { setMsg('member-edit-msg', false, '저장하지 못했습니다.'); }
+    } catch (err) { if (submitBtn) submitBtn.disabled = false; setMsg('member-edit-msg', false, '저장하지 못했습니다. 규칙 게시와 로그인 상태를 확인해주세요.'); }
     return;
   }
   if (f.id === 'cap-form') {

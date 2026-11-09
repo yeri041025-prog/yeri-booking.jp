@@ -158,9 +158,9 @@ service cloud.firestore {
         && request.resource.data.memberId is string
         && request.resource.data.onceKey is string
         && okBooking(request.resource.data, id);
-      // 관리자가 수업의 담당 센세를 바꿀 때 기존 예약의 센세 값만 함께 옮깁니다.
+      // 관리자가 수업의 담당 센세를 바꾸거나, 수강생의 이름·번호를 고칠 때 기존 예약의 해당 값만 함께 옮깁니다.
       allow update: if isAdmin()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['teacher']);
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['teacher', 'memberId', 'name', 'last4']);
       // 취소: 같은 기기(uid)이거나, 어느 기기든 본인 확인 사본(수강생 문서 아래)을 함께 지울 때 가능합니다.
       allow delete: if isAdmin()
         || (signedIn() && cancelOpen(resource.data.date, resource.data.slot)
