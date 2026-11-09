@@ -384,6 +384,26 @@ function memberFormHtml(m) {
     + '<p id="member-edit-msg" class="msg" role="status"></p></form>';
 }
 
+function memberListHtml() {
+  const q = memberSearch.trim().toLowerCase();
+  const list = members.filter(m => !q || (m.name || '').toLowerCase().indexOf(q) >= 0 || (m.last4 || '').indexOf(q) >= 0)
+    .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ko'));
+  let html = '';
+  if (!list.length) html += '<p class="empty">' + (members.length ? '찾는 수강생이 없습니다.' : '아직 등록된 수강생이 없습니다.') + '</p>';
+  else {
+    html += '<ul class="slotlist">' + list.map(m => {
+      const info = passInfo(m, today);
+      if (editingMember === m.id) return '<li style="display:block">' + memberFormHtml(m) + '</li>';
+      return '<li><span class="info"><span class="mrow-meta"><b>' + esc(m.name) + '</b><small>' + esc(m.last4) + '</small>'
+        + '<span class="pill ' + (info.state === 'active' ? 'ok' : (info.state === 'before' ? 'off' : 'full')) + '">' + PASS_STATE[info.state] + '</span></span>'
+        + '<small>' + esc(memberLine(m)) + '</small></span>'
+        + '<span class="btns"><button class="act" type="button" data-editmember="' + esc(m.id) + '">수정</button>'
+        + '<button class="act' + (confirmCancel['m_' + m.id] ? ' danger' : '') + '" type="button" data-delmember="' + esc(m.id) + '">' + (confirmCancel['m_' + m.id] ? '삭제 확인' : '삭제') + '</button></span></li>';
+    }).join('') + '</ul>';
+  }
+  return html;
+}
+
 function renderMembers(preserve) {
   const el = $('view-members');
   const q = memberSearch.trim().toLowerCase();
@@ -401,18 +421,7 @@ function renderMembers(preserve) {
   html += bulkHtml();
   html += '<section class="panel"><h2>등록된 수강생 (' + members.length + '명)</h2>'
     + '<input id="mf-search" type="search" placeholder="이름 또는 번호로 찾기" value="' + esc(memberSearch) + '">';
-  if (!list.length) html += '<p class="empty">' + (members.length ? '찾는 수강생이 없습니다.' : '아직 등록된 수강생이 없습니다.') + '</p>';
-  else {
-    html += '<ul class="slotlist">' + list.map(m => {
-      const info = passInfo(m, today);
-      if (editingMember === m.id) return '<li style="display:block">' + memberFormHtml(m) + '</li>';
-      return '<li><span class="info"><span class="mrow-meta"><b>' + esc(m.name) + '</b><small>' + esc(m.last4) + '</small>'
-        + '<span class="pill ' + (info.state === 'active' ? 'ok' : (info.state === 'before' ? 'off' : 'full')) + '">' + PASS_STATE[info.state] + '</span></span>'
-        + '<small>' + esc(memberLine(m)) + '</small></span>'
-        + '<span class="btns"><button class="act" type="button" data-editmember="' + esc(m.id) + '">수정</button>'
-        + '<button class="act' + (confirmCancel['m_' + m.id] ? ' danger' : '') + '" type="button" data-delmember="' + esc(m.id) + '">' + (confirmCancel['m_' + m.id] ? '삭제 확인' : '삭제') + '</button></span></li>';
-    }).join('') + '</ul>';
-  }
+  html += '<div id="mf-list">' + memberListHtml() + '</div>';
   html += '<p id="memberlist-msg" class="msg" role="status"></p></section>';
   paint(el, html, preserve);
 }
@@ -766,10 +775,9 @@ document.addEventListener('change', e => {
 
 document.addEventListener('input', e => {
   if (e.target.id === 'mf-search') {
+    // 검색칸은 다시 그리지 않고 목록만 바꿉니다. (칸을 다시 그리면 한글 조합이 끊겨 'ㅇ ㅣ ㅈ ㅣ'처럼 풀립니다.)
     memberSearch = e.target.value;
-    const pos = e.target.selectionStart;
-    renderMembers(true);
-    const el = $('mf-search'); if (el) { el.focus(); try { el.setSelectionRange(pos, pos); } catch (x) { /* 무시 */ } }
+    const box = $('mf-list'); if (box) box.innerHTML = memberListHtml();
   }
 });
 
