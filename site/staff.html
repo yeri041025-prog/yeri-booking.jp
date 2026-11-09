@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>예리한어학원 강사 페이지</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap staffwrap">
+  <header>
+    <h1>강사 페이지</h1>
+    <p>등록된 구글 계정으로 로그인하면 수업별 예약자를 볼 수 있습니다.</p>
+  </header>
+  <div id="notice" class="notice" hidden></div>
+  <section id="login" class="panel login" hidden>
+    <button id="signin" class="primary" type="button">구글 계정으로 로그인</button>
+    <p id="login-msg" class="msg"></p>
+  </section>
+  <div id="app" class="wrap staffapp" hidden>
+    <div class="topline"><span id="who" class="who"></span><button id="signout" class="act" type="button">로그아웃</button></div>
+    <nav id="tabs" class="tabs" hidden>
+      <button class="tab on" type="button" data-view="bookings">예약 현황</button>
+      <button class="tab" type="button" data-view="members">수강생 관리</button>
+      <button class="tab" type="button" data-view="schedule">수업 관리</button>
+      <button class="tab" type="button" data-view="teachers">센세 관리</button>
+    </nav>
+    <div id="view-bookings" class="wrap">
+      <div id="chips" class="chips" hidden></div>
+      <div class="nav">
+        <button id="prev" class="act" type="button" data-nav="-1" aria-label="이전 달">‹</button>
+        <strong id="month-label"></strong>
+        <button id="next" class="act" type="button" data-nav="1" aria-label="다음 달">›</button>
+      </div>
+      <main id="list" class="wrap" style="gap:16px"></main>
+    </div>
+    <div id="view-members" class="wrap" hidden></div>
+    <div id="view-schedule" class="wrap" hidden></div>
+    <div id="view-teachers" class="wrap" hidden></div>
+    <section id="purge" class="panel" hidden>
+      <h2 style="font-size:15px;margin:0 0 6px">지난 예약 정리</h2>
+      <p style="margin:0 0 10px;font-size:13px;color:var(--muted)">개인정보 보관 기간(수업일·수강 종료일로부터 3개월)이 지난 예약과 수강생 정보(이름, 전화번호 뒤 4자리, 기간, 횟수)를 삭제합니다. 한 달에 한 번 정도 눌러주세요.</p>
+      <button id="purge-btn" class="act" type="button">3개월 지난 예약 삭제</button>
+      <p id="purge-msg" class="msg"></p>
+    </section>
+  </div>
+</div>
+<script type="module" src="staff.js"></script>
+</body>
+</html>

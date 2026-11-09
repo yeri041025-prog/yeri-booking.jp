@@ -1,0 +1,225 @@
+rules_version = '2';
+
+// 예리한어학원 회화반 예약 - Firestore 보안 규칙
+// 수업 시간표(정원, 담당 센세)는 config/schedule 문서에서 읽어옵니다. 원장님 화면의 "수업 관리"에서 고치면 이 규칙도 자동으로 따라갑니다.
+// 수강생(members)은 원장님이 등록한 기간과 회차 안에서만 예약할 수 있습니다.
+// 관리자 이메일을 바꾸려면 아래 'yeri041025@gmail.com' 과 site/firebase-config.js 의 ADMIN_EMAIL 을 같이 바꾸세요.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function isGoogle() {
+      return signedIn()
+        && request.auth.token.firebase.sign_in_provider == 'google.com'
+        && request.auth.token.email_verified == true;
+    }
+    function staffRef() {
+      return /databases/$(database)/documents/staff/$(request.auth.token.email);
+    }
+    function isAdmin() {
+      return isGoogle()
+        && (request.auth.token.email == 'yeri041025@gmail.com'
+            || (exists(staffRef()) && get(staffRef()).data.role == 'admin'));
+    }
+    function isTeacherOf(t) {
+      return isGoogle() && exists(staffRef())
+        && get(staffRef()).data.role == 'teacher'
+        && get(staffRef()).data.teacher == t;
+    }
+
+    function memberRef(id) { return /databases/$(database)/documents/members/$(id); }
+    function bookingRef(id) { return /databases/$(database)/documents/bookings/$(id); }
+    function seatRef(id) { return /databases/$(database)/documents/seats/$(id); }
+    function onceRef(id) { return /databases/$(database)/documents/once/$(id); }
+    // 수강생 화면용 예약 사본: 수강생 문서 아래에 있어서, 이름+번호로 만든 문서 이름을 아는 사람만 열 수 있습니다.
+    function mirrorRef(mid, id) { return /databases/$(database)/documents/members/$(mid)/mine/$(id); }
+
+    // 현재 시간표
+    function sched() { return get(/databases/$(database)/documents/config/schedule).data; }
+
+    function validSeat(d, id) {
+      let slots = sched().slots;
+      return d.slot is string
+        && d.slot in slots
+        && d.n is int && d.n >= 1 && d.n <= slots[d.slot].cap
+        && (!('from' in slots[d.slot]) || slots[d.slot].from <= d.date)
+        && (!('to' in slots[d.slot]) || d.date <= slots[d.slot].to)
+        && d.date is string && d.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && id == d.date + '_' + d.slot + '_' + string(d.n);
+    }
+
+    // 수업 시작 24시간 전까지만 수강생이 취소할 수 있습니다. (수업 시각은 한국시간 기준)
+    function cancelOpen(date, slot) {
+      let def = sched().slots[slot];
+      let startAt = timestamp.date(int(date[0:4]), int('1' + date[5:7]) - 100, int('1' + date[8:10]) - 100)
+        + duration.value(int(def.start[0:2]), 'h')
+        + duration.value(int(def.start[3:5]), 'm')
+        - duration.value(9, 'h');
+      return request.time < startAt - duration.value(24, 'h');
+    }
+
+    // 120분 이상 수업은 2회, 그 외는 1회가 차감됩니다. (c: 예약 문서에 적힌 차감 횟수)
+    function costOk(def, c) {
+      let mins = int(def.end[0:2]) * 60 + int(def.end[3:5]) - int(def.start[0:2]) * 60 - int(def.start[3:5]);
+      return c is int && ((mins >= 120 && c == 2) || (mins < 120 && c == 1));
+    }
+
+    // 날짜(YYYY-MM-DD)를 비교하기 쉬운 숫자로 (예: 20261109). '09' 같은 앞자리 0을 피하려고 앞에 1을 붙였다 뺍니다.
+    function dayNum(date) {
+      return int(date[0:4]) * 10000 + (int('1' + date[5:7]) - 100) * 100 + (int('1' + date[8:10]) - 100);
+    }
+
+    // 매월 20일부터 다음 달 수업을 예약할 수 있습니다. (한국시간 기준)
+    //  - 1~19일: 다음 달 4일까지 / 20일~말일: 다다음 달 4일까지  (다음 달 5일부터가 '아직 열리지 않은 시간표')
+    function dateOpen(date) {
+      let k = request.time + duration.value(9, 'h');
+      let y = k.year();
+      let m = k.month();
+      let d = k.day();
+      let n = dayNum(date);
+      return (d < 20 && m < 12 && n < y * 10000 + (m + 1) * 100 + 5)
+        || (d < 20 && m == 12 && n < (y + 1) * 10000 + 105)
+        || (d >= 20 && m <= 10 && n < y * 10000 + (m + 2) * 100 + 5)
+        || (d >= 20 && m == 11 && n < (y + 1) * 10000 + 105)
+        || (d >= 20 && m == 12 && n < (y + 1) * 10000 + 205);
+    }
+
+    // 예약 한 건이 유효한지: 좌석 + 등록된 수강생 + 수강 기간 + 남은 회차(1회 차감)
+    function okBooking(d, id) {
+      let m = get(memberRef(d.memberId)).data;
+      let after = getAfter(memberRef(d.memberId)).data;
+      return validSeat(d, id)
+        && d.teacher == sched().slots[d.slot].teacher
+        && d.name is string && d.name == m.name
+        && d.last4 is string && d.last4.matches('^[0-9]{4}$') && d.last4 == m.last4
+        && m.start <= d.date && d.date <= m.end
+        && dateOpen(d.date)
+        && costOk(sched().slots[d.slot], d.cost)
+        && m.credits >= d.cost
+        && after.credits == m.credits - d.cost
+        && after.lastRef == id
+        && getAfter(seatRef(id)).data.uid == request.auth.uid
+        && existsAfter(onceRef(d.onceKey));
+    }
+
+    // 수강생 본인 기기에서 예약/취소할 때만 회차를 예약 문서에 적힌 만큼(120분 이상 2회, 그 외 1회) 줄이거나 돌려줍니다. (예약 문서와 같이 처리될 때만 허용)
+    function memberUse(id) {
+      let a = resource.data;
+      let b = request.resource.data;
+      return signedIn()
+        && b.diff(a).affectedKeys().hasOnly(['credits', 'lastRef'])
+        && b.lastRef is string
+        && (
+          (!exists(bookingRef(b.lastRef))
+            && existsAfter(bookingRef(b.lastRef))
+            && getAfter(bookingRef(b.lastRef)).data.memberId == id
+            && b.credits == a.credits - getAfter(bookingRef(b.lastRef)).data.cost
+            && b.credits >= 0)
+          ||
+          (exists(bookingRef(b.lastRef))
+            && !existsAfter(bookingRef(b.lastRef))
+            && get(bookingRef(b.lastRef)).data.memberId == id
+            && b.credits == a.credits + get(bookingRef(b.lastRef)).data.get('cost', 1)
+            && b.credits <= a.total)
+        );
+    }
+
+    // 시간표 (센세 목록, 수업 목록): 접속한 모두가 읽고, 관리자만 고칩니다.
+    match /config/{id} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+
+    // 좌석: 번호가 문서 이름이라서 같은 번호는 두 번 만들 수 없고, 정원(번호 범위)을 넘길 수 없습니다.
+    // 이름과 전화번호는 들어 있지 않아 모든 접속자가 읽어도 됩니다.
+    match /seats/{id} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['date', 'slot', 'n', 'uid', 'at'])
+        && request.resource.data.uid == request.auth.uid
+        && validSeat(request.resource.data, id)
+        && existsAfter(bookingRef(id));
+      // 같은 번호의 예약 문서가 함께 지워질 때만 지울 수 있습니다. (예약 문서는 본인 확인이 필요해서 남의 좌석은 지울 수 없음)
+      allow delete: if isAdmin()
+        || (signedIn() && cancelOpen(resource.data.date, resource.data.slot)
+            && exists(bookingRef(id)) && !existsAfter(bookingRef(id)));
+    }
+
+    // 예약자 정보: 본인, 해당 수업 센세, 관리자만 읽을 수 있습니다.
+    match /bookings/{id} {
+      allow read: if signedIn()
+        && (resource.data.uid == request.auth.uid
+            || isAdmin()
+            || isTeacherOf(resource.data.teacher));
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['date', 'slot', 'n', 'teacher', 'name', 'last4', 'memberId', 'cost', 'uid', 'onceKey', 'at'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.memberId is string
+        && request.resource.data.onceKey is string
+        && okBooking(request.resource.data, id);
+      // 관리자가 수업의 담당 센세를 바꿀 때 기존 예약의 센세 값만 함께 옮깁니다.
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['teacher']);
+      // 취소: 같은 기기(uid)이거나, 어느 기기든 본인 확인 사본(수강생 문서 아래)을 함께 지울 때 가능합니다.
+      allow delete: if isAdmin()
+        || (signedIn() && cancelOpen(resource.data.date, resource.data.slot)
+            && (resource.data.uid == request.auth.uid
+                || (exists(mirrorRef(resource.data.memberId, id)) && !existsAfter(mirrorRef(resource.data.memberId, id)))));
+    }
+
+    // 같은 사람이 같은 수업을 중복 예약하지 못하게 하는 표시 문서
+    match /once/{id} {
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['uid', 'date', 'slot'])
+        && request.resource.data.uid == request.auth.uid;
+      // 문서 이름에 이름+번호로 만든 값이 들어 있어서 본인만 알 수 있습니다.
+      allow delete: if isAdmin()
+        || (signedIn() && cancelOpen(resource.data.date, resource.data.slot));
+    }
+
+    // 등록된 수강생 (원장님이 이름, 전화번호 뒤 4자리, 수강 기간, 회차를 등록)
+    // 문서 이름은 이름과 번호로 만든 암호 같은 값이라서, 본인 이름과 번호를 아는 사람만 자기 수강권을 열어볼 수 있고 목록은 볼 수 없습니다.
+    match /members/{id} {
+      allow get: if signedIn();
+      allow list: if isAdmin();
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || memberUse(id);
+
+      // 내 예약 사본: 예약/취소할 때 예약 문서와 같이 만들고 지웁니다. 읽으려면 수강생 문서 이름을 알아야 합니다.
+      match /mine/{bid} {
+        allow read: if signedIn();
+        allow create: if signedIn()
+          && request.resource.data.keys().hasOnly(['date', 'slot', 'n', 'onceKey', 'cost', 'name', 'uid', 'at'])
+          && existsAfter(bookingRef(bid))
+          && getAfter(bookingRef(bid)).data.memberId == id;
+        allow delete: if isAdmin()
+          || (signedIn() && exists(bookingRef(bid)) && !existsAfter(bookingRef(bid)));
+      }
+    }
+
+    // 이날의 수업 주제: 학생을 포함해 접속한 모두가 읽고, 관리자와 그 수업의 담당 센세만 쓸 수 있습니다.
+    match /topics/{id} {
+      allow read: if signedIn();
+      allow create, update: if isGoogle()
+        && request.resource.data.keys().hasOnly(['date', 'slot', 'text', 'by', 'at'])
+        && request.resource.data.slot is string
+        && request.resource.data.slot in sched().slots
+        && request.resource.data.date is string && request.resource.data.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && id == request.resource.data.date + '_' + request.resource.data.slot
+        && request.resource.data.text is string
+        && request.resource.data.text.size() >= 1 && request.resource.data.text.size() <= 60
+        && request.resource.data.by == request.auth.token.email
+        && (isAdmin() || isTeacherOf(sched().slots[request.resource.data.slot].teacher));
+      allow delete: if isAdmin()
+        || (isGoogle() && resource.data.slot in sched().slots && isTeacherOf(sched().slots[resource.data.slot].teacher));
+    }
+
+    // 센세·관리자 로그인 계정 목록: 관리자만 관리, 본인 문서는 본인이 읽을 수 있음
+    match /staff/{email} {
+      allow get: if isGoogle() && (request.auth.token.email == email || isAdmin());
+      allow list: if isAdmin();
+      allow write: if isAdmin();
+    }
+  }
+}

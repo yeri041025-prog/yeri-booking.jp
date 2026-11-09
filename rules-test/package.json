@@ -1,0 +1,13 @@
+{
+  "name": "yeri-rules-test",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "firebase emulators:exec --only firestore --project demo-yeri \"node test.mjs\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^3.0.4",
+    "firebase": "^10.12.2",
+    "firebase-tools": "^13.0.0"
+  }
+}
