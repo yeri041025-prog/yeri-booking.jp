@@ -244,6 +244,19 @@ function render() {
     } else html = list.length ? list.map(s => renderCard(selDate, s)).join('')
       : '<p class="empty">이 날은 조건에 맞는 수업이 없습니다. 다른 날짜를 눌러보거나 필터를 바꿔보세요.</p>';
   }
+  // 수강권을 확인(등록된 수강생으로 인식)하기 전에는 시간표를 보여주지 않습니다. 횟수가 0이거나 기간이 끝났어도 등록된 수강생이면 볼 수 있습니다.
+  const locked = memberStatus !== 'ok' || !member;
+  if (locked) {
+    html = '<div class="lockbox"><b>' + (memberStatus === 'loading' ? '수강권을 확인하는 중입니다…'
+      : memberStatus === 'missing' ? '등록된 수강생이 아닙니다'
+      : memberStatus === 'error' ? '수강권을 불러오지 못했습니다'
+      : '수강권을 확인하면 시간표가 보입니다') + '</b><p>'
+      + (memberStatus === 'loading' ? '잠시만 기다려주세요.'
+        : memberStatus === 'missing' ? '입력한 이름과 번호를 다시 확인하거나 학원에 문의해주세요.'
+        : memberStatus === 'error' ? '잠시 후 새로고침해주세요.'
+        : '위에 수강생 <b>이름</b>과 <b>전화번호 뒤 4자리</b>를 입력해주세요.') + '</p></div>';
+  }
+  ['.weeknav', '#daystrip', 'label.toggle', '#filters'].forEach(sel => { const el = document.querySelector(sel); if (el) el.hidden = locked || (sel === '#filters' && el.hidden); });
   $('list').innerHTML = html;
   document.querySelectorAll('#member input').forEach(i => { if (saved[i.id] != null) i.value = saved[i.id]; });
   if (focusId) { const el = $(focusId); if (el && ($('list').contains(el) || $('member').contains(el))) el.focus(); }
