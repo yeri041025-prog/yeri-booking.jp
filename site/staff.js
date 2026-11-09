@@ -243,7 +243,7 @@ function renderSchedule(preserve) {
   if (!teacherIds(sched).length) html += '<p class="hint">먼저 "센세 관리" 탭에서 센세를 추가해주세요.</p>';
   if (!list.length) html += '<p class="empty">등록된 수업이 없습니다.</p>';
   else {
-    const liOf = s => '<li' + (s.to && s.to < today ? ' class="ended"' : '') + '><span class="info"><b>' + esc(s.name) + '</b><small>' + esc(teacherName(sched, s.teacher)) + ' · ' + esc(daysLabel(s.days)) + ' ' + esc(s.start) + '–' + esc(s.end) + ' · 정원 ' + esc(s.cap) + '명'
+    const liOf = s => s.id === editing ? '<li class="editing" style="display:block">' + slotFormHtml() + '</li>' : '<li' + (s.to && s.to < today ? ' class="ended"' : '') + '><span class="info"><b>' + esc(s.name) + '</b><small>' + esc(teacherName(sched, s.teacher)) + ' · ' + esc(daysLabel(s.days)) + ' ' + esc(s.start) + '–' + esc(s.end) + ' · 정원 ' + esc(s.cap) + '명'
       + (s.from || s.to ? ' · 적용 ' + esc(s.from ? dotDate(s.from) : '처음') + ' ~ ' + esc(s.to ? dotDate(s.to) : '계속') : '') + '</small></span>'
       + '<span class="btns"><button class="act" type="button" data-editslot="' + esc(s.id) + '">수정</button>'
       + '<button class="act' + (confirmCancel['slot_' + s.id] ? ' danger' : '') + '" type="button" data-delslot="' + esc(s.id) + '">' + (confirmCancel['slot_' + s.id] ? '삭제 확인' : '삭제') + '</button></span></li>';
@@ -268,7 +268,8 @@ function renderSchedule(preserve) {
       + '<p class="hint">수강생 화면에는 정원이 보이지 않고, 남은 자리가 2석 이하일 때만 남은 자리 수가 보입니다.</p></section>';
   }
   html += '<section class="panel"><h2>' + (editing === 'new' ? '새 수업 추가' : (editing ? '수업 수정' : '수업 추가')) + '</h2>';
-  if (editing && (editing === 'new' || sched.slots[editing])) html += slotFormHtml();
+  if (editing === 'new') html += slotFormHtml();
+  else if (editing && sched.slots[editing]) html += '<p class="hint">위 수업 목록에서 열린 수정 창에서 고쳐주세요.</p>';
   else html += '<div><button id="slot-new" class="primary" type="button"' + (teacherIds(sched).length ? '' : ' disabled') + '>+ 수업 추가</button></div>';
   html += '</section>';
   paint(el, html, preserve);
@@ -628,10 +629,10 @@ document.addEventListener('click', async e => {
     catch (err) { renderSchedule(false); setMsg('capauto-msg', false, '저장하지 못했습니다.'); }
     return;
   }
-  if (e.target.closest('#slot-new')) { editing = 'new'; renderSchedule(false); return; }
+  if (e.target.closest('#slot-new')) { editing = 'new'; renderSchedule(false); const f = $('sf-name'); if (f) { f.scrollIntoView({ block: 'center' }); f.focus(); } return; }
   if (e.target.closest('#slot-cancel')) { editing = null; renderSchedule(false); return; }
   const es = e.target.closest('[data-editslot]');
-  if (es) { editing = es.dataset.editslot; renderSchedule(false); return; }
+  if (es) { editing = es.dataset.editslot; renderSchedule(false); const f = document.querySelector('#view-schedule li.editing'); if (f) f.scrollIntoView({ block: 'center' }); return; }
   const ds = e.target.closest('[data-delslot]');
   if (ds) {
     const id = ds.dataset.delslot;
