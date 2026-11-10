@@ -1,0 +1,23 @@
+# firestore.rules(또는 firebase.json)가 바뀌어 main에 올라오면 Firestore 보안 규칙만 게시합니다.
+name: deploy-rules
+on:
+  push:
+    branches: [main]
+    paths: ['firestore.rules', 'firebase.json']
+  workflow_dispatch:
+
+jobs:
+  rules:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - name: Firestore 규칙 게시
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          echo "$GOOGLE_APPLICATION_CREDENTIALS_JSON" > "$RUNNER_TEMP/sa.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
+          npx --yes firebase-tools@13 deploy --only firestore:rules --project yeris-class-book --non-interactive
+          rm -f "$RUNNER_TEMP/sa.json"

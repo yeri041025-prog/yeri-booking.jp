@@ -1,0 +1,20 @@
+# site 폴더가 바뀌어 main에 올라올 때만 Netlify에 배포합니다. (배포 1번이 Netlify 크레딧을 쓰므로 필요할 때만 실행)
+name: deploy-site
+on:
+  push:
+    branches: [main]
+    paths: ['site/**']
+  workflow_dispatch:
+
+jobs:
+  site:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - name: Netlify 배포
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+        run: npx --yes netlify-cli@17 deploy --dir=site --prod --message "github ${{ github.sha }}"
