@@ -131,12 +131,15 @@ export function passInfo(m, today) {
 }
 export const PASS_STATE = { active: '이용중', before: '시작 전', expired: '기간 만료', empty: '횟수 소진' };
 
-// 수업 시작 24시간 전까지만 취소할 수 있습니다. (한국시간 기준)
-export const CANCEL_HOURS = 24;
+// 수업 시작 12시간 전까지만 취소할 수 있습니다. 12시간 이내 취소·불참은 크레딧이 차감됩니다. (한국시간 기준)
+export const CANCEL_HOURS = 12;
 export function cancelDeadline(date, start) {
   return new Date(date + 'T' + start + ':00+09:00').getTime() - CANCEL_HOURS * 3600000;
 }
+// 12시간 전까지: 취소하면 크레딧이 돌아옵니다.
 export const canCancel = (date, start, now) => (now == null ? Date.now() : now) < cancelDeadline(date, start);
+// 수업이 시작되기 전까지는 취소할 수 있습니다. (12시간 이내 취소는 크레딧이 돌아오지 않습니다)
+export const canCancelAny = (date, start, now) => (now == null ? Date.now() : now) < new Date(date + 'T' + start + ':00+09:00').getTime();
 
 /* ---------- 예약 오픈 규칙 ----------
    매월 20일부터 다음 달 수업을 예약할 수 있습니다.

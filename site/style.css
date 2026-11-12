@@ -296,3 +296,9 @@ textarea{width:100%;font:inherit;font-size:14px;padding:10px;border:1px solid va
 .lockbox{padding:28px 18px;text-align:center;border:1px dashed #cfd6e4;border-radius:14px;background:#f7f9fd;color:#4a5570}
 .lockbox b{display:block;margin-bottom:6px;font-size:1.05rem;color:#1f2a44}
 .lockbox p{margin:0;line-height:1.5}
+
+.rulebanner{display:flex;gap:12px;align-items:flex-start;margin:0 0 14px;padding:14px 16px;border-radius:14px;border:2px solid #e0561f;background:#fff4ec;color:#7a2a0a}
+.rulebanner .ico{font-size:1.5rem;line-height:1.1}
+.rulebanner b{display:block;font-size:1.08rem;font-weight:700;color:#b53a0a;margin-bottom:3px}
+.rulebanner small{display:block;font-size:.88rem;line-height:1.45}
+.warnline{margin:8px 0 0;padding:8px 10px;border-radius:8px;background:#fff4ec;color:#b53a0a;font-size:.92rem}

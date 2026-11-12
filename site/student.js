@@ -6,7 +6,7 @@ import { firebaseConfig } from "./firebase-config.js";
 import {
   DOW, DOW_ORDER, MAX_AHEAD, slotsFor, slotList, teachersWithSlots, teacherName,
   kstToday, kstNowHM, addDays, weekKey, shiftMonth, parseDate, esc,
-  memberKey, passInfo, PASS_STATE, dotDate, canCancel, CANCEL_HOURS, slotCost, isOpenDate, opensOn
+  memberKey, passInfo, PASS_STATE, dotDate, canCancel, canCancelAny, CANCEL_HOURS, slotCost, isOpenDate, opensOn
 } from "./schedule.js";
 
 const app = initializeApp(firebaseConfig);
@@ -145,8 +145,12 @@ function renderFilters() {
 function cancelControl(b) {
   const def = sched && sched.slots && sched.slots[b.slot];
   if (!def) return '';
-  if (!canCancel(b.date, def.start)) return '<span class="locked">취소 불가 (수업 ' + CANCEL_HOURS + '시간 전 마감)</span>';
-  const asking = confirmCancel[b.id];
+  if (!canCancelAny(b.date, def.start)) return '<span class="locked">수업이 시작되어 취소할 수 없어요</span>';
+  const asking = confirmCancel[b.id], refundable = canCancel(b.date, def.start);
+  if (!refundable) {
+    return '<span class="warnline"><b>수업 ' + CANCEL_HOURS + '시간 이내 취소 시 크레딧이 차감됩니다</b></span> <button class="act danger" type="button" data-cancel="' + esc(b.id) + '">'
+      + (asking ? '취소 확인 (크레딧 환불 안 됨)' : '그래도 취소') + '</button>';
+  }
   return '<button class="act' + (asking ? ' danger' : '') + '" type="button" data-cancel="' + esc(b.id) + '">'
     + (asking ? (b.memberId ? '취소 확인 (횟수 환불)' : '취소 확인') : '예약 취소') + '</button>';
 }
@@ -161,7 +165,7 @@ function renderMine() {
     const s = sched.slots[b.slot], d = parseDate(b.date);
     return '<li><span class="nm">' + (d.getUTCMonth() + 1) + '/' + d.getUTCDate() + '(' + DOW[d.getUTCDay()] + ') ' + esc(s.start) + ' · ' + esc(s.name) + ' · ' + esc(teacherName(sched, s.teacher))
       + '<small>' + esc(b.name) + '</small></span>' + cancelControl(b) + '</li>';
-  }).join('') + '</ul><p class="hint">취소는 수업 시작 ' + CANCEL_HOURS + '시간 전까지 가능하고, 취소하면 횟수가 돌아옵니다.</p>';
+  }).join('') + '</ul><p class="hint">취소는 수업 시작 ' + CANCEL_HOURS + '시간 전까지 하면 횟수가 돌아옵니다. 12시간 이내 취소는 가능하지만 크레딧이 차감됩니다.</p>';
 }
 
 function renderWeek() {
@@ -214,7 +218,7 @@ function renderCard(date, slot) {
         h += '<p class="hint">' + esc(problem) + '</p>';
         if (!ident) h += '<div><button class="act" type="button" data-gopass="1">수강권 확인하러 가기</button></div>';
       } else {
-        h += '<div class="confirmbook"><p><b>' + esc(member.name) + '</b>님으로 예약합니다.<br><small>횟수 ' + cost + '회가 차감됩니다 (잔여 ' + (member.credits || 0) + '회 → ' + ((member.credits || 0) - cost) + '회). 수업 ' + CANCEL_HOURS + '시간 전까지 취소하면 돌려받아요.</small></p>'
+        h += '<div class="confirmbook"><p><b>' + esc(member.name) + '</b>님으로 예약합니다.<br><small>횟수 ' + cost + '회가 차감됩니다 (잔여 ' + (member.credits || 0) + '회 → ' + ((member.credits || 0) - cost) + '회). 수업 ' + CANCEL_HOURS + '시간 전까지 취소하면 돌려받아요.</small></p><p class="warnline"><b>수업 시작 ' + CANCEL_HOURS + '시간 이내 취소 시 크레딧이 차감됩니다.</b></p>'
           + '<button class="primary" type="button" data-book="' + esc(slot.id) + '" data-bookdate="' + date + '">예약 확정</button></div>';
       }
     }
@@ -300,13 +304,13 @@ async function reserve(date, slot) {
   return { ok: false, text: '다른 분이 먼저 예약했거나 같은 이름으로 이미 예약된 수업입니다. 다시 확인해주세요.' };
 }
 
-async function cancelBooking(b) {
+async function cancelBooking(b, refund) {
   const batch = writeBatch(db);
   batch.delete(doc(db, 'seats', b.id));
   batch.delete(doc(db, 'bookings', b.id));
   batch.delete(doc(db, 'once', b.onceKey));
   if (b.viaMirror) batch.delete(doc(db, 'members', b.memberId, 'mine', b.id));
-  if (b.memberId) batch.update(doc(db, 'members', b.memberId), { credits: increment(b.cost || 1), lastRef: b.id });
+  if (b.memberId && refund) batch.update(doc(db, 'members', b.memberId), { credits: increment(b.cost || 1), lastRef: b.id });
   await batch.commit();
 }
 
@@ -370,9 +374,10 @@ document.addEventListener('click', async e => {
   if (c) {
     const b = mine.find(x => x.id === c.dataset.cancel); if (!b) return;
     const def = sched && sched.slots && sched.slots[b.slot];
-    if (!def || !canCancel(b.date, def.start)) { feedback[key(b.date, b.slot)] = { ok: false, text: '수업 시작 ' + CANCEL_HOURS + '시간 전까지만 취소할 수 있어요. 변경이 필요하면 학원에 문의해주세요.' }; render(); return; }
+    if (!def || !canCancelAny(b.date, def.start)) { feedback[key(b.date, b.slot)] = { ok: false, text: '수업이 시작되어 취소할 수 없어요. 변경이 필요하면 학원에 문의해주세요.' }; render(); return; }
     if (!confirmCancel[b.id]) { confirmCancel[b.id] = true; render(); return; }
-    try { await cancelBooking(b); delete confirmCancel[b.id]; feedback[key(b.date, b.slot)] = { ok: true, text: '예약을 취소했습니다.' + (b.memberId ? ' 횟수 ' + (b.cost || 1) + '회가 돌아왔어요.' : '') }; }
+    const refund = canCancel(b.date, def.start);
+    try { await cancelBooking(b, refund); delete confirmCancel[b.id]; feedback[key(b.date, b.slot)] = { ok: true, text: '예약을 취소했습니다.' + (b.memberId ? (refund ? ' 횟수 ' + (b.cost || 1) + '회가 돌아왔어요.' : ' 수업 ' + CANCEL_HOURS + '시간 이내 취소라 크레딧은 돌아오지 않아요.') : '') }; }
     catch (err) { delete confirmCancel[b.id]; feedback[key(b.date, b.slot)] = { ok: false, text: '취소하지 못했습니다. 수업 ' + CANCEL_HOURS + '시간 이내이거나 연결이 불안정할 수 있어요. 잠시 후 다시 시도해주세요.' }; }
     render();
   }

@@ -49,14 +49,21 @@ service cloud.firestore {
         && id == d.date + '_' + d.slot + '_' + string(d.n);
     }
 
-    // 수업 시작 24시간 전까지만 수강생이 취소할 수 있습니다. (수업 시각은 한국시간 기준)
-    function cancelOpen(date, slot) {
+    // 수업 시작 시각 (한국시간 기준)
+    function startAt(date, slot) {
       let def = sched().slots[slot];
-      let startAt = timestamp.date(int(date[0:4]), int('1' + date[5:7]) - 100, int('1' + date[8:10]) - 100)
+      return timestamp.date(int(date[0:4]), int('1' + date[5:7]) - 100, int('1' + date[8:10]) - 100)
         + duration.value(int(def.start[0:2]), 'h')
         + duration.value(int(def.start[3:5]), 'm')
         - duration.value(9, 'h');
-      return request.time < startAt - duration.value(24, 'h');
+    }
+    // 수업이 시작되기 전까지는 수강생이 직접 취소할 수 있습니다.
+    function classOpen(date, slot) {
+      return request.time < startAt(date, slot);
+    }
+    // 수업 시작 12시간 전까지 취소하면 크레딧이 돌아옵니다. 12시간 이내 취소는 가능하지만 크레딧은 돌아오지 않습니다(차감).
+    function cancelOpen(date, slot) {
+      return request.time < startAt(date, slot) - duration.value(12, 'h');
     }
 
     // 120분 이상 수업은 2회, 그 외는 1회가 차감됩니다. (c: 예약 문서에 적힌 차감 횟수)
@@ -120,6 +127,7 @@ service cloud.firestore {
           (exists(bookingRef(b.lastRef))
             && !existsAfter(bookingRef(b.lastRef))
             && get(bookingRef(b.lastRef)).data.memberId == id
+            && cancelOpen(get(bookingRef(b.lastRef)).data.date, get(bookingRef(b.lastRef)).data.slot)
             && b.credits == a.credits + get(bookingRef(b.lastRef)).data.get('cost', 1)
             && b.credits <= a.total)
         );
@@ -142,7 +150,7 @@ service cloud.firestore {
         && existsAfter(bookingRef(id));
       // 같은 번호의 예약 문서가 함께 지워질 때만 지울 수 있습니다. (예약 문서는 본인 확인이 필요해서 남의 좌석은 지울 수 없음)
       allow delete: if isAdmin()
-        || (signedIn() && cancelOpen(resource.data.date, resource.data.slot)
+        || (signedIn() && classOpen(resource.data.date, resource.data.slot)
             && exists(bookingRef(id)) && !existsAfter(bookingRef(id)));
     }
 
@@ -163,7 +171,7 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['teacher', 'memberId', 'name', 'last4']);
       // 취소: 같은 기기(uid)이거나, 어느 기기든 본인 확인 사본(수강생 문서 아래)을 함께 지울 때 가능합니다.
       allow delete: if isAdmin()
-        || (signedIn() && cancelOpen(resource.data.date, resource.data.slot)
+        || (signedIn() && classOpen(resource.data.date, resource.data.slot)
             && (resource.data.uid == request.auth.uid
                 || (exists(mirrorRef(resource.data.memberId, id)) && !existsAfter(mirrorRef(resource.data.memberId, id)))));
     }
@@ -175,7 +183,7 @@ service cloud.firestore {
         && request.resource.data.uid == request.auth.uid;
       // 문서 이름에 이름+번호로 만든 값이 들어 있어서 본인만 알 수 있습니다.
       allow delete: if isAdmin()
-        || (signedIn() && cancelOpen(resource.data.date, resource.data.slot));
+        || (signedIn() && classOpen(resource.data.date, resource.data.slot));
     }
 
     // 등록된 수강생 (원장님이 이름, 전화번호 뒤 4자리, 수강 기간, 회차를 등록)
