@@ -302,3 +302,6 @@ textarea{width:100%;font:inherit;font-size:14px;padding:10px;border:1px solid va
 .rulebanner b{display:block;font-size:1.08rem;font-weight:700;color:#b53a0a;margin-bottom:3px}
 .rulebanner small{display:block;font-size:.88rem;line-height:1.45}
 .warnline{margin:8px 0 0;padding:8px 10px;border-radius:8px;background:#fff4ec;color:#b53a0a;font-size:.92rem}
+
+.when .room{font-weight:700}
+.when .room.moved{color:#c2410c}

@@ -23,6 +23,7 @@ let sched = null, schedLoaded = false;
 let teacherFilter = 'all', timeFilter = 'all', classFilter = 'all', showFull = true;
 let openSlot = null;
 let taken = {};      // "날짜_수업" -> Set(좌석번호)
+let rooms = {};      // 그날만 바뀐 강의실 { '날짜_수업': '301호' }
 let topics = {};     // 이날의 수업 주제 { '날짜_수업': '글' }
 let mine = [];       // 내 예약 (이름+번호로 확인한 수강생의 예약, 어느 기기에서든)
 let mineMirror = [], mineLegacy = [];
@@ -200,7 +201,7 @@ function renderCard(date, slot) {
   const tname = teacherName(sched, slot.teacher);
   let h = '<article class="card' + (ended ? ' ended' : '') + '"><div class="top"><span class="tag' + (low ? ' warn' : '') + '">' + tagText + '</span>' + (cost > 1 ? '<span class="costtag">' + cost + '회 차감</span>' : '') + mark + '</div>'
     + '<h3>' + esc(slot.name) + '</h3>'
-    + '<div class="when"><span>' + (d.getUTCMonth() + 1) + '월 ' + d.getUTCDate() + '일 (' + DOW[d.getUTCDay()] + ')</span><span class="sep"></span><span>' + esc(slot.start) + ' – ' + esc(slot.end) + '</span></div>'
+    + '<div class="when"><span>' + (d.getUTCMonth() + 1) + '월 ' + d.getUTCDate() + '일 (' + DOW[d.getUTCDay()] + ')</span><span class="sep"></span><span>' + esc(slot.start) + ' – ' + esc(slot.end) + '</span>' + ((rooms[k] || slot.room) ? '<span class="sep"></span><span class="room' + (rooms[k] ? ' moved' : '') + '">📍 ' + esc(rooms[k] || slot.room) + (rooms[k] ? ' (변경)' : '') + '</span>' : '') + '</div>'
     + (topics[k] ? '<p class="topic"><b>이날의 주제</b>' + esc(topics[k]) + '</p>' : '')
     + '<div class="foot"><span class="teacher"><span class="avatar" aria-hidden="true">' + esc(tname.replace(/센세$/, '').charAt(0) || '?') + '</span><b>' + esc(tname) + '</b></span>' + btn + '</div>';
   if (isOpen && !(ended)) {
@@ -413,7 +414,7 @@ function subscribeSeats() {
   if (unsubSeats) unsubSeats();
   if (unsubTopics) unsubTopics();
   unsubTopics = onSnapshot(query(collection(db, 'topics'), where('date', '>=', weekStart), where('date', '<=', addDays(weekStart, 6))), snap => {
-    const m = {}; snap.docs.forEach(d => { const v = d.data(); if (v.text) m[key(v.date, v.slot)] = v.text; }); topics = m; render();
+    const m = {}, r = {}; snap.docs.forEach(d => { const v = d.data(); if (v.text) m[key(v.date, v.slot)] = v.text; if (v.room) r[key(v.date, v.slot)] = v.room; }); topics = m; rooms = r; render();
   }, () => {});
   const q = query(collection(db, 'seats'), where('date', '>=', weekStart), where('date', '<=', addDays(weekStart, 6)));
   unsubSeats = onSnapshot(q, snap => {

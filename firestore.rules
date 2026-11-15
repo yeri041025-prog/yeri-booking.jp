@@ -210,13 +210,14 @@ service cloud.firestore {
     match /topics/{id} {
       allow read: if signedIn();
       allow create, update: if isGoogle()
-        && request.resource.data.keys().hasOnly(['date', 'slot', 'text', 'by', 'at'])
+        && request.resource.data.keys().hasOnly(['date', 'slot', 'text', 'room', 'by', 'at'])
         && request.resource.data.slot is string
         && request.resource.data.slot in sched().slots
         && request.resource.data.date is string && request.resource.data.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
         && id == request.resource.data.date + '_' + request.resource.data.slot
-        && request.resource.data.text is string
-        && request.resource.data.text.size() >= 1 && request.resource.data.text.size() <= 60
+        && (request.resource.data.get('text', '') is string && request.resource.data.get('text', '').size() <= 60)
+        && (request.resource.data.get('room', '') is string && request.resource.data.get('room', '').size() <= 20)
+        && (request.resource.data.get('text', '').size() + request.resource.data.get('room', '').size() >= 1)
         && request.resource.data.by == request.auth.token.email
         && (isAdmin() || isTeacherOf(sched().slots[request.resource.data.slot].teacher));
       allow delete: if isAdmin()
