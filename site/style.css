@@ -305,3 +305,6 @@ textarea{width:100%;font:inherit;font-size:14px;padding:10px;border:1px solid va
 
 .when .room{font-weight:700}
 .when .room.moved{color:#c2410c}
+.when .room.online{color:#1d4ed8}
+.linkbox{margin:8px 0;padding:10px 12px;border:1px solid #bfdbfe;background:#eff6ff;border-radius:10px;font-size:14px;word-break:break-all}
+.linkbox b{display:block;margin-bottom:4px}

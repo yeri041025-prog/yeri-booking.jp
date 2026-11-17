@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, collection, doc, query, where, onSnapshot, writeBatch, serverTimestamp, increment }
+import { getFirestore, collection, doc, query, where, onSnapshot, getDoc, writeBatch, serverTimestamp, increment }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 import {
@@ -24,6 +24,7 @@ let teacherFilter = 'all', timeFilter = 'all', classFilter = 'all', showFull = t
 let openSlot = null;
 let taken = {};      // "날짜_수업" -> Set(좌석번호)
 let rooms = {};      // 그날만 바뀐 강의실 { '날짜_수업': '301호' }
+let linkCache = {};  // 온라인 수업 접속 링크 { '날짜_수업': 주소 } (내가 예약한 수업만 불러옴)
 let topics = {};     // 이날의 수업 주제 { '날짜_수업': '글' }
 let mine = [];       // 내 예약 (이름+번호로 확인한 수강생의 예약, 어느 기기에서든)
 let mineMirror = [], mineLegacy = [];
@@ -143,6 +144,20 @@ function renderFilters() {
   $('f-teacher').value = teacherFilter; $('f-class').value = classFilter; $('f-time').value = timeFilter;
 }
 
+const linkLoading = {};
+async function loadLink(date, slotId) {
+  const k = key(date, slotId);
+  if (k in linkCache || linkLoading[k]) return;
+  linkLoading[k] = true;
+  let u = '';
+  try {
+    const one = await getDoc(doc(db, 'links', k));
+    if (one.exists() && one.data().url) u = one.data().url;
+    else { const def = await getDoc(doc(db, 'links', 'default_' + slotId)); if (def.exists() && def.data().url) u = def.data().url; }
+  } catch (e) { u = ''; }
+  linkCache[k] = u; linkLoading[k] = false; render();
+}
+
 function cancelControl(b) {
   const def = sched && sched.slots && sched.slots[b.slot];
   if (!def) return '';
@@ -201,7 +216,7 @@ function renderCard(date, slot) {
   const tname = teacherName(sched, slot.teacher);
   let h = '<article class="card' + (ended ? ' ended' : '') + '"><div class="top"><span class="tag' + (low ? ' warn' : '') + '">' + tagText + '</span>' + (cost > 1 ? '<span class="costtag">' + cost + '회 차감</span>' : '') + mark + '</div>'
     + '<h3>' + esc(slot.name) + '</h3>'
-    + '<div class="when"><span>' + (d.getUTCMonth() + 1) + '월 ' + d.getUTCDate() + '일 (' + DOW[d.getUTCDay()] + ')</span><span class="sep"></span><span>' + esc(slot.start) + ' – ' + esc(slot.end) + '</span>' + ((rooms[k] || slot.room) ? '<span class="sep"></span><span class="room' + (rooms[k] ? ' moved' : '') + '">📍 ' + esc(rooms[k] || slot.room) + (rooms[k] ? ' (변경)' : '') + '</span>' : '') + '</div>'
+    + '<div class="when"><span>' + (d.getUTCMonth() + 1) + '월 ' + d.getUTCDate() + '일 (' + DOW[d.getUTCDay()] + ')</span><span class="sep"></span><span>' + esc(slot.start) + ' – ' + esc(slot.end) + '</span>' + (slot.online ? '<span class="sep"></span><span class="room online">💻 온라인 실시간</span>' : (rooms[k] || slot.room) ? '<span class="sep"></span><span class="room' + (rooms[k] ? ' moved' : '') + '">📍 ' + esc(rooms[k] || slot.room) + (rooms[k] ? ' (변경)' : '') + '</span>' : '') + '</div>'
     + (topics[k] ? '<p class="topic"><b>이날의 주제</b>' + esc(topics[k]) + '</p>' : '')
     + '<div class="foot"><span class="teacher"><span class="avatar" aria-hidden="true">' + esc(tname.replace(/센세$/, '').charAt(0) || '?') + '</span><b>' + esc(tname) + '</b></span>' + btn + '</div>';
   if (isOpen && !(ended)) {
@@ -209,6 +224,12 @@ function renderCard(date, slot) {
     if (my.length) {
       h += '<ul class="roster">' + my.map(b =>
         '<li><span class="nm">' + esc(b.name) + '님 예약됨</span>' + cancelControl(b) + '</li>').join('') + '</ul>';
+      if (slot.online) {
+        loadLink(date, slot.id);
+        const u = linkCache[k];
+        h += u ? '<p class="linkbox"><b>온라인 접속 링크</b><a href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">' + esc(u) + '</a></p>'
+          : '<p class="hint">' + (u === undefined ? '접속 링크를 불러오는 중입니다…' : '접속 링크는 수업 전에 센세가 올려드려요.') + '</p>';
+      }
     }
     if (!full) {
       const problem = passProblem(date, cost);
