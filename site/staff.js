@@ -101,13 +101,13 @@ function renderSession(day, slot) {
     h += canEdit
       ? '<div class="topicrow"><label for="rm_' + esc(k) + '">강의실</label><input id="rm_' + esc(k) + '" data-room-in maxlength="20" value="' + esc(rm) + '" placeholder="' + esc(slot.room || '예: 301호') + '"></div>'
         + '<div class="topicrow"><label for="tp_' + esc(k) + '">이날의 주제</label><input id="tp_' + esc(k) + '" data-topic-in maxlength="60" value="' + esc(topics[k] || '') + '" placeholder="예: ～ようと思う 말하기 연습 (학생에게 보여요)"><button class="act" type="button" data-topic-save="' + esc(day.date + '|' + slot.id) + '">저장</button></div>'
-        + (slot.online ? (loadLinks(day.date, slot.id), '') + '<div class="topicrow"><label for="lk_' + esc(k) + '">접속 링크</label><input id="lk_' + esc(k) + '" data-link-in type="url" maxlength="300" value="' + esc(links[k] || links['default_' + slot.id] || '') + '" placeholder="https://zoom.us/j/..."><button class="act" type="button" data-link-save="' + esc(day.date + '|' + slot.id) + '">이날만</button><button class="act" type="button" data-link-save="default|' + esc(slot.id) + '">계속 사용</button></div><p class="hint">예약한 학생에게만 화면에 보입니다. "계속 사용"은 이 수업의 기본 링크로 저장돼요.</p>' : '')
+        + (slot.online !== false ? (loadLinks(day.date, slot.id), '') + '<div class="topicrow"><label for="lk_' + esc(k) + '">접속 링크</label><input id="lk_' + esc(k) + '" data-link-in type="url" maxlength="300" value="' + esc(links[k] || links['default_' + slot.id] || '') + '" placeholder="https://zoom.us/j/..."><button class="act" type="button" data-link-save="' + esc(day.date + '|' + slot.id) + '">이날만</button><button class="act" type="button" data-link-save="default|' + esc(slot.id) + '">계속 사용</button></div><p class="hint">예약한 학생에게만 화면에 보입니다. "계속 사용"은 이 수업의 기본 링크로 저장돼요.</p>' : '')
         + '<p class="hint">강의실을 바꾸면(보강 등) 그날 수업만 바뀌고, 학생 화면에도 바로 보입니다. 기본 강의실로 되돌리려면 기본값과 같게 적거나 비우세요.</p>'
       : ((rm ? '<p class="topic"><b>강의실</b>' + esc(rm) + '</p>' : '') + (topics[k] ? '<p class="topic"><b>이날의 주제</b>' + esc(topics[k]) + '</p>' : ''));
     if (!rows.length) h += '<p class="empty">아직 예약이 없습니다.</p>';
     else {
       h += '<ul class="roster">' + rows.map(r =>
-        '<li><span class="nm">' + esc(r.name) + '<small>' + esc(r.last4) + '</small></span>'
+        '<li><span class="nm">' + esc(r.name) + '<small>' + esc(r.last4) + '</small>' + (r.mode === 'online' ? '<small class="onl">💻 온라인</small>' : '') + '</span>'
         + (role === 'admin' ? cancelButtons(r) : '')
         + '</li>').join('') + '</ul>';
     }
@@ -231,7 +231,7 @@ function slotFormHtml() {
     + '<div class="grid2"><label>적용 시작일 (비우면 계속)<input id="sf-from" type="date" value="' + esc(cur.from || '') + '"></label>'
     + '<label>적용 종료일 (비우면 계속)<input id="sf-to" type="date" value="' + esc(cur.to || '') + '"></label></div>'
     + '<p class="hint">달이 바뀌면서 시간이 달라지는 수업은, 지난 시간표 수업의 종료일을 말일로 하고 새 수업을 다음 달 1일 시작으로 추가하세요. 그러면 이번 달 수업은 그대로 유지됩니다.</p>'
-    + '<label class="chk"><input type="checkbox" id="sf-online"' + (cur.online ? ' checked' : '') + '> 온라인 실시간 수업 (강의실 대신 접속 링크를 사용)</label>'
+    + '<label class="chk"><input type="checkbox" id="sf-online"' + (cur.online !== false ? ' checked' : '') + '> 온라인 참여 가능 (학생이 예약할 때 현장/온라인 선택)</label>'
     + '<label>기본 강의실<input id="sf-room" maxlength="20" placeholder="예: 301호" value="' + esc(cur.room || '') + '"></label>'
     + '<div class="grid2"><label>시작<input id="sf-start" type="time" required value="' + esc(cur.start) + '"></label>'
     + '<label>끝<input id="sf-end" type="time" required value="' + esc(cur.end) + '"></label></div>'
@@ -249,7 +249,7 @@ function renderSchedule(preserve) {
   if (!teacherIds(sched).length) html += '<p class="hint">먼저 "센세 관리" 탭에서 센세를 추가해주세요.</p>';
   if (!list.length) html += '<p class="empty">등록된 수업이 없습니다.</p>';
   else {
-    const liOf = s => s.id === editing ? '<li class="editing" style="display:block">' + slotFormHtml() + '</li>' : '<li' + (s.to && s.to < today ? ' class="ended"' : '') + '><span class="info"><b>' + esc(s.name) + '</b><small>' + esc(teacherName(sched, s.teacher)) + ' · ' + esc(daysLabel(s.days)) + ' ' + esc(s.start) + '–' + esc(s.end) + ' · 정원 ' + esc(s.cap) + '명' + (s.online ? ' · 💻온라인' : '') + (s.room ? ' · ' + esc(s.room) : '')
+    const liOf = s => s.id === editing ? '<li class="editing" style="display:block">' + slotFormHtml() + '</li>' : '<li' + (s.to && s.to < today ? ' class="ended"' : '') + '><span class="info"><b>' + esc(s.name) + '</b><small>' + esc(teacherName(sched, s.teacher)) + ' · ' + esc(daysLabel(s.days)) + ' ' + esc(s.start) + '–' + esc(s.end) + ' · 정원 ' + esc(s.cap) + '명' + (s.online === false ? ' · 현장만' : ' · 💻온라인 가능') + (s.room ? ' · ' + esc(s.room) : '')
       + (s.from || s.to ? ' · 적용 ' + esc(s.from ? dotDate(s.from) : '처음') + ' ~ ' + esc(s.to ? dotDate(s.to) : '계속') : '') + '</small></span>'
       + '<span class="btns"><button class="act" type="button" data-editslot="' + esc(s.id) + '">수정</button>'
       + '<button class="act' + (confirmCancel['slot_' + s.id] ? ' danger' : '') + '" type="button" data-delslot="' + esc(s.id) + '">' + (confirmCancel['slot_' + s.id] ? '삭제 확인' : '삭제') + '</button></span></li>';
@@ -296,7 +296,7 @@ async function saveSlot() {
   const next = clone(sched);
   next.slots[id] = { name, teacher, cap, days, start, end };
   const room = $('sf-room').value.trim().slice(0, 20); if (room) next.slots[id].room = room;
-  if ($('sf-online').checked) next.slots[id].online = true;
+  if (!$('sf-online').checked) next.slots[id].online = false;
   if (from) next.slots[id].from = from;
   if (to) next.slots[id].to = to;
   try {

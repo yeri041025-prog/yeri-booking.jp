@@ -161,10 +161,11 @@ service cloud.firestore {
             || isAdmin()
             || isTeacherOf(resource.data.teacher));
       allow create: if signedIn()
-        && request.resource.data.keys().hasOnly(['date', 'slot', 'n', 'teacher', 'name', 'last4', 'memberId', 'cost', 'uid', 'onceKey', 'at'])
+        && request.resource.data.keys().hasOnly(['date', 'slot', 'n', 'teacher', 'name', 'last4', 'memberId', 'cost', 'uid', 'onceKey', 'mode', 'at'])
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.memberId is string
         && request.resource.data.onceKey is string
+        && (request.resource.data.get('mode', 'onsite') == 'onsite' || (request.resource.data.mode == 'online' && sched().slots[request.resource.data.slot].get('online', true) != false))
         && okBooking(request.resource.data, id);
       // 관리자가 수업의 담당 센세를 바꾸거나, 수강생의 이름·번호를 고칠 때 기존 예약의 해당 값만 함께 옮깁니다.
       allow update: if isAdmin()
@@ -198,9 +199,10 @@ service cloud.firestore {
       match /mine/{bid} {
         allow read: if signedIn();
         allow create: if signedIn()
-          && request.resource.data.keys().hasOnly(['date', 'slot', 'n', 'onceKey', 'cost', 'name', 'uid', 'at'])
+          && request.resource.data.keys().hasOnly(['date', 'slot', 'n', 'onceKey', 'cost', 'name', 'uid', 'mode', 'at'])
           && existsAfter(bookingRef(bid))
-          && getAfter(bookingRef(bid)).data.memberId == id;
+          && getAfter(bookingRef(bid)).data.memberId == id
+          && request.resource.data.get('mode', 'onsite') == getAfter(bookingRef(bid)).data.get('mode', 'onsite');
         allow delete: if isAdmin()
           || (signedIn() && exists(bookingRef(bid)) && !existsAfter(bookingRef(bid)));
       }

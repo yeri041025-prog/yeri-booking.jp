@@ -24,6 +24,7 @@ let teacherFilter = 'all', timeFilter = 'all', classFilter = 'all', showFull = t
 let openSlot = null;
 let taken = {};      // "날짜_수업" -> Set(좌석번호)
 let rooms = {};      // 그날만 바뀐 강의실 { '날짜_수업': '301호' }
+let modePick = {};   // 예약 방식 선택 { '날짜_수업': 'onsite'|'online' }
 let linkCache = {};  // 온라인 수업 접속 링크 { '날짜_수업': 주소 } (내가 예약한 수업만 불러옴)
 let topics = {};     // 이날의 수업 주제 { '날짜_수업': '글' }
 let mine = [];       // 내 예약 (이름+번호로 확인한 수강생의 예약, 어느 기기에서든)
@@ -216,15 +217,15 @@ function renderCard(date, slot) {
   const tname = teacherName(sched, slot.teacher);
   let h = '<article class="card' + (ended ? ' ended' : '') + '"><div class="top"><span class="tag' + (low ? ' warn' : '') + '">' + tagText + '</span>' + (cost > 1 ? '<span class="costtag">' + cost + '회 차감</span>' : '') + mark + '</div>'
     + '<h3>' + esc(slot.name) + '</h3>'
-    + '<div class="when"><span>' + (d.getUTCMonth() + 1) + '월 ' + d.getUTCDate() + '일 (' + DOW[d.getUTCDay()] + ')</span><span class="sep"></span><span>' + esc(slot.start) + ' – ' + esc(slot.end) + '</span>' + (slot.online ? '<span class="sep"></span><span class="room online">💻 온라인 실시간</span>' : (rooms[k] || slot.room) ? '<span class="sep"></span><span class="room' + (rooms[k] ? ' moved' : '') + '">📍 ' + esc(rooms[k] || slot.room) + (rooms[k] ? ' (변경)' : '') + '</span>' : '') + '</div>'
+    + '<div class="when"><span>' + (d.getUTCMonth() + 1) + '월 ' + d.getUTCDate() + '일 (' + DOW[d.getUTCDay()] + ')</span><span class="sep"></span><span>' + esc(slot.start) + ' – ' + esc(slot.end) + '</span>' + ((rooms[k] || slot.room) ? '<span class="sep"></span><span class="room' + (rooms[k] ? ' moved' : '') + '">📍 ' + esc(rooms[k] || slot.room) + (rooms[k] ? ' (변경)' : '') + '</span>' : '') + (slot.online !== false ? '<span class="sep"></span><span class="room online">💻 온라인 참여 가능</span>' : '') + '</div>'
     + (topics[k] ? '<p class="topic"><b>이날의 주제</b>' + esc(topics[k]) + '</p>' : '')
     + '<div class="foot"><span class="teacher"><span class="avatar" aria-hidden="true">' + esc(tname.replace(/센세$/, '').charAt(0) || '?') + '</span><b>' + esc(tname) + '</b></span>' + btn + '</div>';
   if (isOpen && !(ended)) {
     h += '<div class="drawer">';
     if (my.length) {
       h += '<ul class="roster">' + my.map(b =>
-        '<li><span class="nm">' + esc(b.name) + '님 예약됨</span>' + cancelControl(b) + '</li>').join('') + '</ul>';
-      if (slot.online) {
+        '<li><span class="nm">' + esc(b.name) + '님 예약됨 · ' + (b.mode === 'online' ? '💻 온라인' : '📍 현장') + '</span>' + cancelControl(b) + '</li>').join('') + '</ul>';
+      if (slot.online !== false && my.some(b => b.mode === 'online')) {
         loadLink(date, slot.id);
         const u = linkCache[k];
         h += u ? '<p class="linkbox"><b>온라인 접속 링크</b><a href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">' + esc(u) + '</a></p>'
@@ -240,7 +241,8 @@ function renderCard(date, slot) {
         h += '<p class="hint">' + esc(problem) + '</p>';
         if (!ident) h += '<div><button class="act" type="button" data-gopass="1">수강권 확인하러 가기</button></div>';
       } else {
-        h += '<div class="confirmbook"><p><b>' + esc(member.name) + '</b>님으로 예약합니다.<br><small>횟수 ' + cost + '회가 차감됩니다 (잔여 ' + (member.credits || 0) + '회 → ' + ((member.credits || 0) - cost) + '회). 수업 ' + CANCEL_HOURS + '시간 전까지 취소하면 돌려받아요.</small></p><p class="warnline"><b>수업 시작 ' + CANCEL_HOURS + '시간 이내 취소 시 크레딧이 차감됩니다.</b></p>'
+        const mp = modePick[k] === 'online' && slot.online !== false ? 'online' : 'onsite';
+        h += '<div class="confirmbook">' + (slot.online !== false ? '<fieldset class="modepick"><legend>참여 방식</legend><label><input type="radio" name="mode_' + esc(k) + '" data-mode="' + esc(k) + '" value="onsite"' + (mp === 'onsite' ? ' checked' : '') + '> 📍 현장</label><label><input type="radio" name="mode_' + esc(k) + '" data-mode="' + esc(k) + '" value="online"' + (mp === 'online' ? ' checked' : '') + '> 💻 온라인</label></fieldset>' : '') + '<p><b>' + esc(member.name) + '</b>님으로 예약합니다.<br><small>횟수 ' + cost + '회가 차감됩니다 (잔여 ' + (member.credits || 0) + '회 → ' + ((member.credits || 0) - cost) + '회). 수업 ' + CANCEL_HOURS + '시간 전까지 취소하면 돌려받아요.</small></p><p class="warnline"><b>수업 시작 ' + CANCEL_HOURS + '시간 이내 취소 시 크레딧이 차감됩니다.</b></p>'
           + '<button class="primary" type="button" data-book="' + esc(slot.id) + '" data-bookdate="' + date + '">예약 확정</button></div>';
       }
     }
@@ -289,11 +291,12 @@ function render() {
 }
 
 /* ---------- 예약 ---------- */
-async function reserve(date, slot) {
+async function reserve(date, slot, mode) {
   const def = sched && sched.slots && sched.slots[slot];
   if (!def) return { ok: false, text: '이 수업은 더 이상 열려 있지 않습니다. 새로고침해주세요.' };
   if (isEnded(date, def)) return { ok: false, text: '이미 끝난 수업입니다.' };
   if (!isOpenDate(date, today)) return { ok: false, text: '아직 오픈되지 않은 시간표입니다. ' + opensOn(date) + '부터 예약할 수 있어요.' };
+  mode = mode === 'online' && def.online !== false ? 'online' : 'onsite';
   const cost = slotCost(def);
   const problem = passProblem(date, cost);
   if (problem) return { ok: false, text: problem };
@@ -311,8 +314,8 @@ async function reserve(date, slot) {
     tried.add(n);
     const id = k + '_' + n, batch = writeBatch(db);
     batch.set(doc(db, 'seats', id), { date, slot, n, uid, at: serverTimestamp() });
-    batch.set(doc(db, 'bookings', id), { date, slot, n, teacher: def.teacher, name, last4, memberId: identKey, cost, uid, onceKey: once, at: serverTimestamp() });
-    batch.set(doc(db, 'members', identKey, 'mine', id), { date, slot, n, onceKey: once, cost, name, uid, at: serverTimestamp() });
+    batch.set(doc(db, 'bookings', id), { date, slot, n, teacher: def.teacher, name, last4, memberId: identKey, cost, uid, onceKey: once, mode, at: serverTimestamp() });
+    batch.set(doc(db, 'members', identKey, 'mine', id), { date, slot, n, onceKey: once, cost, name, uid, mode, at: serverTimestamp() });
     batch.set(doc(db, 'once', once), { uid, date, slot });
     batch.update(doc(db, 'members', identKey), { credits: increment(-cost), lastRef: id });
     try {
@@ -384,11 +387,13 @@ document.addEventListener('click', async e => {
     const el = $('member'); if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
     const inp = $('mf-name'); if (inp) inp.focus(); return;
   }
+  const mpk = e.target.closest('[data-mode]');
+  if (mpk) { modePick[mpk.dataset.mode] = mpk.value; return; }
   const bk = e.target.closest('[data-book]');
   if (bk) {
     const date = bk.dataset.bookdate, slot = bk.dataset.book, k = key(date, slot);
     bk.disabled = true;
-    try { feedback[k] = await reserve(date, slot); }
+    try { feedback[k] = await reserve(date, slot, modePick[k]); }
     catch (err) { feedback[k] = { ok: false, text: '예약을 저장하지 못했습니다. 인터넷 연결을 확인하고 다시 시도해주세요.' }; }
     render(); return;
   }
