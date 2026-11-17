@@ -6,7 +6,7 @@ import { getFirestore, collection, doc, getDoc, getDocs, setDoc, updateDoc, dele
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
 import { firebaseConfig, ADMIN_EMAIL } from "./firebase-config.js";
 import {
-  DOW, DOW_ORDER, MAX_AHEAD, SEED, SEED_LABEL, slotList, slotsFor, teacherName, teacherIds, teachersWithSlots, daysLabel, newId,
+  DOW, DOW_ORDER, MAX_AHEAD, SEED, SEED_LABEL, slotList, slotsFor, isOff, teacherName, teacherIds, teachersWithSlots, daysLabel, newId,
   kstToday, shiftMonth, monthIndex, monthDays, groupByWeek, parseDate, statusOf, esc,
   memberKey, passInfo, PASS_STATE, dotDate, minutesBetween, capForMinutes, defaultCap
 } from "./schedule.js";
@@ -93,9 +93,9 @@ function renderSession(day, slot) {
   let h = '<div class="sess"><button class="shead" type="button" data-slot="' + esc(slot.id) + '" aria-expanded="' + isOpen + '">'
     + '<span class="time">' + esc(slot.start) + '–' + esc(slot.end) + '</span>'
     + '<span class="sinfo"><b>' + esc(slot.name) + '</b><small>' + esc(teacherName(sched, slot.teacher)) + '</small><span class="seats" aria-hidden="true">' + seats + '</span></span>'
-    + '<span class="count">' + n + '/' + slot.cap + '<span class="pill ' + st[0] + '">' + st[1] + '</span></span></button>';
+    + '<span class="count">' + n + '/' + slot.cap + '<span class="pill ' + st[0] + '">' + (isOff(slot, day.date) ? '휴강' : st[1]) + '</span></span></button>';
   if (isOpen) {
-    h += '<div class="sbody">';
+    h += '<div class="sbody">' + (isOff(slot, day.date) ? '<p class="hint offnote">휴강일입니다. 학생은 예약할 수 없어요. 이미 예약한 분이 있으면 "횟수 돌려주고 취소"로 정리해주세요.</p>' : '');
     const canEdit = role === 'admin' || slot.teacher === myTeacher;
     const rm = rooms[k] || slot.room || '';
     h += canEdit
@@ -217,11 +217,16 @@ function capHint(start, end) {
   return '수업 길이 ' + m + '분 → 권장 정원 ' + capForMinutes(m) + '명 (' + CAP_RULE + ')';
 }
 
+let offDraft = [];
+function offChips() {
+  return offDraft.length ? offDraft.slice().sort().map(d => '<span class="offchip">' + esc(dotDate(d)) + '<button type="button" data-offdel="' + esc(d) + '" aria-label="삭제">×</button></span>').join('') : '<span class="hint">등록된 휴강일이 없습니다.</span>';
+}
 function slotFormHtml() {
   const isNew = editing === 'new';
   const cur = isNew ? { name: '', teacher: teacherIds(sched)[0] || '', cap: 10, days: [], start: '', end: '' } : Object.assign({}, sched.slots[editing]);
   const teacherOpts = teacherIds(sched).map(id => '<option value="' + esc(id) + '"' + (cur.teacher === id ? ' selected' : '') + '>' + esc(teacherName(sched, id)) + '</option>').join('');
   const dayBoxes = DOW_ORDER.map(d => '<label><input type="checkbox" id="sf-day-' + d + '"' + ((cur.days || []).indexOf(d) >= 0 ? ' checked' : '') + '>' + DOW[d] + '</label>').join('');
+  offDraft = Array.isArray(cur.off) ? cur.off.slice() : [];
   return '<form id="slot-form" class="stack" autocomplete="off">'
     + '<label>수업명<input id="sf-name" maxlength="40" required value="' + esc(cur.name) + '"></label>'
     + '<div class="grid2"><label>담당 센세<select id="sf-teacher">' + teacherOpts + '</select></label>'
@@ -235,6 +240,7 @@ function slotFormHtml() {
     + '<label>기본 강의실<input id="sf-room" maxlength="20" placeholder="예: 301호" value="' + esc(cur.room || '') + '"></label>'
     + '<div class="grid2"><label>시작<input id="sf-start" type="time" required value="' + esc(cur.start) + '"></label>'
     + '<label>끝<input id="sf-end" type="time" required value="' + esc(cur.end) + '"></label></div>'
+    + '<fieldset class="days"><legend>휴강일 (이 날은 학생이 예약할 수 없어요)</legend><div id="sf-offlist">' + offChips() + '</div><div class="grid2"><input id="sf-offadd" type="date"><button id="sf-offbtn" class="act" type="button">휴강일 추가</button></div></fieldset>'
     + '<div class="btnrow"><button class="primary" type="submit">' + (isNew ? '수업 추가' : '수정 저장') + '</button>'
     + '<button id="slot-cancel" class="act" type="button">취소</button></div>'
     + '<p id="slot-msg" class="msg" role="status"></p></form>';
@@ -299,6 +305,7 @@ async function saveSlot() {
   if (!$('sf-online').checked) next.slots[id].online = false;
   if (from) next.slots[id].from = from;
   if (to) next.slots[id].to = to;
+  if (offDraft.length) next.slots[id].off = offDraft.slice().sort();
   try {
     await setDoc(doc(db, 'config', 'schedule'), next);
     if (before && before.teacher !== teacher) await migrateTeacher(id, teacher);
@@ -669,6 +676,13 @@ document.addEventListener('click', async e => {
     return;
   }
   if (e.target.closest('#slot-new')) { editing = 'new'; renderSchedule(false); const f = $('sf-name'); if (f) { f.scrollIntoView({ block: 'center' }); f.focus(); } return; }
+  const od = e.target.closest('[data-offdel]');
+  if (od) { offDraft = offDraft.filter(x => x !== od.dataset.offdel); $('sf-offlist').innerHTML = offChips(); return; }
+  if (e.target.closest('#sf-offbtn')) {
+    const v = $('sf-offadd').value;
+    if (v && offDraft.indexOf(v) < 0 && offDraft.length < 60) offDraft.push(v);
+    $('sf-offadd').value = ''; $('sf-offlist').innerHTML = offChips(); return;
+  }
   if (e.target.closest('#slot-cancel')) { editing = null; renderSchedule(false); return; }
   const es = e.target.closest('[data-editslot]');
   if (es) { editing = es.dataset.editslot; renderSchedule(false); const f = document.querySelector('#view-schedule li.editing'); if (f) f.scrollIntoView({ block: 'center' }); return; }

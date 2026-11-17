@@ -6,7 +6,7 @@ import { firebaseConfig } from "./firebase-config.js";
 import {
   DOW, DOW_ORDER, MAX_AHEAD, slotsFor, slotList, teachersWithSlots, teacherName,
   kstToday, kstNowHM, addDays, weekKey, shiftMonth, parseDate, esc,
-  memberKey, passInfo, PASS_STATE, dotDate, canCancel, canCancelAny, CANCEL_HOURS, slotCost, isOpenDate, opensOn
+  memberKey, passInfo, PASS_STATE, dotDate, canCancel, canCancelAny, CANCEL_HOURS, slotCost, isOpenDate, opensOn, isOff
 } from "./schedule.js";
 
 const app = initializeApp(firebaseConfig);
@@ -204,23 +204,24 @@ function renderWeek() {
 function renderCard(date, slot) {
   const cap = slot.cap, n = countOf(date, slot.id), full = n >= cap, left = Math.max(0, cap - n);
   const ended = isEnded(date, slot), my = myBookings(date, slot.id), k = key(date, slot.id);
-  const isOpen = openSlot === slot.id, d = parseDate(date), cost = slotCost(slot);
+  const isOpen = openSlot === slot.id, d = parseDate(date), cost = slotCost(slot), off = isOff(slot, date);
   // 정원은 보여주지 않고, 자리가 거의 찼을 때만 남은 자리를 알려줍니다.
   const low = !ended && !full && left <= LOW_LEFT;
-  const tagText = ended ? '종료된 수업' : (full ? '정원이 모두 찼어요' : (low ? '마감 임박 · 잔여 ' + left + '석' : '예약 가능'));
+  const tagText = off ? '휴강' : ended ? '종료된 수업' : (full ? '정원이 모두 찼어요' : (low ? '마감 임박 · 잔여 ' + left + '석' : '예약 가능'));
   const mark = (!ended && full) ? '<span class="fullmark">마감</span>' : (my.length ? '<span class="mymark">내 예약</span>' : '');
   let btn;
-  if (ended) btn = '<button class="bookbtn" type="button" disabled>종료</button>';
+  if (off) btn = '<button class="bookbtn" type="button" disabled>휴강</button>';
+  else if (ended) btn = '<button class="bookbtn" type="button" disabled>종료</button>';
   else if (full && !my.length) btn = '<button class="bookbtn" type="button" disabled>마감</button>';
   else if (my.length) btn = '<button class="bookbtn ghost" type="button" data-slotbtn="' + esc(slot.id) + '" aria-expanded="' + isOpen + '">내 예약 보기</button>';
   else btn = '<button class="bookbtn" type="button" data-slotbtn="' + esc(slot.id) + '" aria-expanded="' + isOpen + '">예약하기</button>';
   const tname = teacherName(sched, slot.teacher);
-  let h = '<article class="card' + (ended ? ' ended' : '') + '"><div class="top"><span class="tag' + (low ? ' warn' : '') + '">' + tagText + '</span>' + (cost > 1 ? '<span class="costtag">' + cost + '회 차감</span>' : '') + mark + '</div>'
+  let h = '<article class="card' + (ended ? ' ended' : '') + '"><div class="top"><span class="tag' + (low || off ? ' warn' : '') + '">' + tagText + '</span>' + (cost > 1 ? '<span class="costtag">' + cost + '회 차감</span>' : '') + mark + '</div>'
     + '<h3>' + esc(slot.name) + '</h3>'
     + '<div class="when"><span>' + (d.getUTCMonth() + 1) + '월 ' + d.getUTCDate() + '일 (' + DOW[d.getUTCDay()] + ')</span><span class="sep"></span><span>' + esc(slot.start) + ' – ' + esc(slot.end) + '</span>' + ((rooms[k] || slot.room) ? '<span class="sep"></span><span class="room' + (rooms[k] ? ' moved' : '') + '">📍 ' + esc(rooms[k] || slot.room) + (rooms[k] ? ' (변경)' : '') + '</span>' : '') + (slot.online !== false ? '<span class="sep"></span><span class="room online">💻 온라인 참여 가능</span>' : '') + '</div>'
     + (topics[k] ? '<p class="topic"><b>이날의 주제</b>' + esc(topics[k]) + '</p>' : '')
     + '<div class="foot"><span class="teacher"><span class="avatar" aria-hidden="true">' + esc(tname.replace(/센세$/, '').charAt(0) || '?') + '</span><b>' + esc(tname) + '</b></span>' + btn + '</div>';
-  if (isOpen && !(ended)) {
+  if (isOpen && !ended && (!off || my.length)) {
     h += '<div class="drawer">';
     if (my.length) {
       h += '<ul class="roster">' + my.map(b =>
@@ -232,7 +233,7 @@ function renderCard(date, slot) {
           : '<p class="hint">' + (u === undefined ? '접속 링크를 불러오는 중입니다…' : '접속 링크는 수업 전에 센세가 올려드려요.') + '</p>';
       }
     }
-    if (!full) {
+    if (!full && !off) {
       const problem = passProblem(date, cost);
       const already = ident && myBookings(date, slot.id).some(b => member && b.memberId && b.name === member.name);
       if (already) {

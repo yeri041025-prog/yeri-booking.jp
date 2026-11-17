@@ -51,6 +51,8 @@ export function slotList(sched) {
   return Object.keys(slots).map(id => Object.assign({ id }, slots[id]));
 }
 // date 를 주면, 수업에 적용 기간(from~to)이 있을 때 그 날짜가 기간 안인 수업만 돌려줍니다.
+// 휴강일(slot.off 에 'YYYY-MM-DD' 목록)인지
+export function isOff(slot, date) { return !!(slot && Array.isArray(slot.off) && slot.off.indexOf(date) >= 0); }
 export function slotsFor(sched, dow, teacher, date) {
   return slotList(sched)
     .filter(s => (s.days || []).indexOf(dow) >= 0 && (!teacher || s.teacher === teacher)
